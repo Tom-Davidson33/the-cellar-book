@@ -281,6 +281,21 @@ const SLIDERS = [
   ["acidity","Soft","Acidic","#3a5a6a","#c9a24b"],
 ];
 
+const FLAVORS = [
+  ["🍒","Cherry"],["🫐","Blackcurrant"],["🍑","Plum"],["🍓","Raspberry"],
+  ["🫐","Blueberry"],["🍓","Strawberry"],["🍋","Lemon"],["🍏","Apple"],
+  ["🍐","Pear"],["🍑","Peach"],["🥭","Tropical"],["🌸","Floral"],
+  ["🪵","Oak"],["🍦","Vanilla"],["🍫","Chocolate"],["☕","Coffee"],
+  ["🌿","Tobacco"],["🧈","Butter"],["🍯","Honey"],["🌶️","Pepper"],
+  ["🪨","Mineral"],["🌍","Earthy"],["🥐","Brioche"],["🌿","Herbaceous"],
+];
+
+const FOOD_PAIRINGS = [
+  ["🥩","Red meat"],["🍖","Lamb"],["🍗","Chicken"],["🐟","Seafood"],
+  ["🍝","Pasta"],["🍕","Pizza"],["🧀","Cheese"],["🥓","Charcuterie"],
+  ["🥗","Salad"],["🌶️","Spicy food"],["🍄","Mushroom"],["🍫","Chocolate"],
+];
+
 async function renderWine(id){
   shell(`<div id="wd" class="fade-in"><div class="text-muted text-sm py-10 text-center">Decanting…</div></div>`);
   const host = $("#wd");
@@ -327,7 +342,39 @@ async function renderWine(id){
             <div class="bar"><i style="width:${a!=null?a:0}%"></i></div>
           </div>`;}).join("")}
       </div>
-    </div>`:"" }
+    </div>
+
+    ${(()=>{
+      const fc={};
+      (reviews||[]).forEach(r=>(r.flavors||[]).forEach(f=>fc[f]=(fc[f]||0)+1));
+      const top=Object.entries(fc).sort((a,b)=>b[1]-a[1]).slice(0,10);
+      if(!top.length) return "";
+      return `<div class="mt-5">
+        <div class="text-[11px] uppercase tracking-wider text-muted mb-2">Key tastes</div>
+        <div class="flex flex-wrap gap-2">
+          ${top.map(([f,c])=>{
+            const em=(FLAVORS.find(x=>x[1]===f)||["",""])[0];
+            return `<div class="text-xs px-3 py-1.5 rounded-full bg-panel2 border border-gold/30 text-cream/80">${em} ${esc(f)} <span class="text-gold/60 text-[10px]">×${c}</span></div>`;
+          }).join("")}
+        </div>
+      </div>`;
+    })()}
+
+    ${(()=>{
+      const fc={};
+      (reviews||[]).forEach(r=>(r.food_pairings||[]).forEach(f=>fc[f]=(fc[f]||0)+1));
+      const top=Object.entries(fc).sort((a,b)=>b[1]-a[1]).slice(0,6);
+      if(!top.length) return "";
+      return `<div class="mt-5">
+        <div class="text-[11px] uppercase tracking-wider text-muted mb-2">Goes well with</div>
+        <div class="flex flex-wrap gap-2">
+          ${top.map(([f])=>{
+            const em=(FOOD_PAIRINGS.find(x=>x[1]===f)||["",""])[0];
+            return `<div class="text-xs px-3 py-1.5 rounded-full bg-panel2 border border-line text-cream/80">${em} ${esc(f)}</div>`;
+          }).join("")}
+        </div>
+      </div>`;
+    })()}`:"" }
 
     <div class="mt-7">
       <div class="text-[11px] uppercase tracking-wider text-muted mb-3">${mine?"Your review":"Add your review"}</div>
@@ -344,6 +391,24 @@ async function renderWine(id){
         <div>
           <label class="fld">Notes</label>
           <textarea id="rv_notes" rows="3" placeholder="What did you taste?">${mine?esc(mine.notes||""):""}</textarea>
+        </div>
+        <div>
+          <label class="fld">Flavours you tasted</label>
+          <div class="flex flex-wrap gap-2 mt-1">
+            ${FLAVORS.map(([em,f])=>{
+              const on=(mine?.flavors||[]).includes(f);
+              return `<button type="button" data-flavor="${esc(f)}" class="flavor-tag btn text-xs px-3 py-1.5 border rounded-full transition ${on?'bg-gold/20 border-gold text-gold':'border-line text-muted'}">${em} ${esc(f)}</button>`;
+            }).join("")}
+          </div>
+        </div>
+        <div>
+          <label class="fld">Goes well with</label>
+          <div class="flex flex-wrap gap-2 mt-1">
+            ${FOOD_PAIRINGS.map(([em,f])=>{
+              const on=(mine?.food_pairings||[]).includes(f);
+              return `<button type="button" data-food="${esc(f)}" class="food-tag btn text-xs px-3 py-1.5 border rounded-full transition ${on?'bg-gold/20 border-gold text-gold':'border-line text-muted'}">${em} ${esc(f)}</button>`;
+            }).join("")}
+          </div>
         </div>
         <button id="saveRv" class="btn w-full bg-claret hover:bg-claretdim text-cream py-3">${mine?"Update review":"Save review"}</button>
       </div>
@@ -367,12 +432,28 @@ async function renderWine(id){
 
   $("#bk").onclick = ()=> go("leaders");
   $("#sl_score").oninput = (e)=> $("#scoreVal").textContent = Number(e.target.value).toFixed(1);
+
+  // Flavour tag toggles
+  document.querySelectorAll(".flavor-tag").forEach(b=> b.onclick=()=>{
+    const on = b.classList.contains("text-gold");
+    b.classList.toggle("bg-gold/20",!on); b.classList.toggle("border-gold",!on);
+    b.classList.toggle("text-gold",!on); b.classList.toggle("text-muted",on); b.classList.toggle("border-line",on);
+  });
+  document.querySelectorAll(".food-tag").forEach(b=> b.onclick=()=>{
+    const on = b.classList.contains("text-gold");
+    b.classList.toggle("bg-gold/20",!on); b.classList.toggle("border-gold",!on);
+    b.classList.toggle("text-gold",!on); b.classList.toggle("text-muted",on); b.classList.toggle("border-line",on);
+  });
+
   $("#saveRv").onclick = async ()=>{
+    const flavors = [...document.querySelectorAll(".flavor-tag.text-gold")].map(b=>b.dataset.flavor);
+    const food_pairings = [...document.querySelectorAll(".food-tag.text-gold")].map(b=>b.dataset.food);
     const row = {
       wine_id: id, user_id: state.user.id,
       body:+$("#sl_body").value, sweetness:+$("#sl_sweetness").value,
       tannin:+$("#sl_tannin").value, acidity:+$("#sl_acidity").value,
       score:+$("#sl_score").value, notes:$("#rv_notes").value.trim()||null,
+      flavors, food_pairings,
       updated_at:new Date().toISOString(),
     };
     $("#saveRv").textContent="Saving…"; $("#saveRv").disabled=true;
