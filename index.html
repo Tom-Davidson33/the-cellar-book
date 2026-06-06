@@ -224,6 +224,7 @@ async function renderLeaders(){
   shell(`<div id="lead"></div>`);
   const host = $("#lead");
   host.innerHTML = `
+    <div id="recentStrip" class="mb-5"></div>
     <div class="flex gap-2 mb-5 scroll-x overflow-x-auto">
       ${TYPE_TABS.map(([k,l])=>`<button data-lt="${k}" class="btn whitespace-nowrap px-4 py-2 text-sm border ${leaderType===k?'bg-cream text-ink border-cream':'border-line text-muted'}">${l}</button>`).join("")}
     </div>
@@ -233,13 +234,40 @@ async function renderLeaders(){
 
   host.querySelectorAll("[data-lt]").forEach(b=> b.onclick=()=>{ leaderType=b.dataset.lt; renderLeaders(); });
 
-  const { data: top, error } = await sb.from("top_by_type").select("*").eq("type", leaderType).lte("rank",10).order("rank");
+  // Fetch all in parallel
+  const [{ data: top, error }, { data: vars }, { data: recent }] = await Promise.all([
+    sb.from("top_by_type").select("*").eq("type", leaderType).lte("rank",10).order("rank"),
+    sb.from("top_by_variety").select("*").eq("rank",1).order("avg_score",{ascending:false}),
+    sb.from("wines").select("id,name,producer,vintage,photo_url,type,created_at,profiles(display_name)").order("created_at",{ascending:false}).limit(5),
+  ]);
+
   if(error) return toast(error.message);
+
+  // Recently added strip
+  if(recent&&recent.length){
+    const timeAgo = t => { const d=(Date.now()-new Date(t))/1000; if(d<3600) return Math.floor(d/60)+"m ago"; if(d<86400) return Math.floor(d/3600)+"h ago"; return Math.floor(d/86400)+"d ago"; };
+    $("#recentStrip").innerHTML = `
+      <div class="text-[11px] uppercase tracking-wider text-muted mb-2">Recently added</div>
+      <div class="flex gap-3 scroll-x overflow-x-auto pb-1">
+        ${recent.map(w=>`
+          <button data-wine="${esc(w.id)}" class="shrink-0 w-28 text-left bg-panel border border-line rounded-xl overflow-hidden hover:border-gold/40 transition">
+            ${w.photo_url
+              ? `<img src="${esc(w.photo_url)}" class="w-full h-20 object-cover"/>`
+              : `<div class="w-full h-20 bg-panel2 grid place-items-center text-2xl">🍷</div>`}
+            <div class="p-2">
+              <div class="text-cream text-xs font-medium leading-tight truncate">${esc(w.name)}</div>
+              <div class="text-muted text-[10px] truncate">${esc(w.profiles?.display_name||"")}</div>
+              <div class="text-gold/60 text-[10px]">${timeAgo(w.created_at)}</div>
+            </div>
+          </button>`).join("")}
+      </div>`;
+    bindCards($("#recentStrip"));
+  }
+
   $("#leadList").innerHTML = (top&&top.length) ? top.map(rankCard).join("")
     : `<div class="text-muted text-sm py-8 text-center border border-dashed border-line rounded-2xl">No ${leaderType} reviewed yet.<br/>Add a bottle and start the cellar.</div>`;
   bindCards($("#leadList"));
 
-  const { data: vars } = await sb.from("top_by_variety").select("*").eq("rank",1).order("avg_score",{ascending:false});
   $("#varList").innerHTML = (vars&&vars.length) ? vars.map(varCard).join("")
     : `<div class="text-muted text-sm py-4 text-center">—</div>`;
   bindCards($("#varList"));
@@ -332,106 +360,128 @@ async function renderWine(id){
       ${w.source_url?`<a href="${esc(w.source_url)}" target="_blank" rel="noopener" class="inline-block mt-3 text-xs text-gold underline underline-offset-4">source ↗</a>`:""}
     </div>` : "" }
 
-    ${ (reviews&&reviews.length) ? `
-    <div class="mt-6">
-      <div class="text-[11px] uppercase tracking-wider text-muted mb-2">The club's palate</div>
-      <div class="space-y-2.5">
-        ${SLIDERS.map(([k,l,r])=>{ const a=avgSlider(k); return `
+    <!-- Tabs -->
+    <div class="flex gap-1 bg-panel2 rounded-xl p-1 mt-6">
+      ${[["tastes","🍇 Tastes"],["pairings","🍽 Pairings"],["reviews","💬 Reviews"]].map(([t,l],i)=>
+        `<button data-wtab="${t}" class="wtab flex-1 py-2 text-xs font-semibold rounded-lg transition ${i===0?'bg-panel text-cream shadow':'text-muted'}">${l}</button>`
+      ).join("")}
+    </div>
+
+    <!-- TASTES TAB -->
+    <div id="wtab-tastes" class="mt-4 space-y-5">
+      ${(reviews&&reviews.length) ? `
+      <div>
+        <div class="text-[11px] uppercase tracking-wider text-muted mb-2">The club's palate</div>
+        <div class="space-y-2.5">
+          ${SLIDERS.map(([k,l,r])=>{ const a=avgSlider(k); return `
+            <div>
+              <div class="flex justify-between text-[11px] text-muted mb-1"><span>${l}</span><span>${r}</span></div>
+              <div class="bar"><i style="width:${a!=null?a:0}%"></i></div>
+            </div>`;}).join("")}
+        </div>
+      </div>
+      ${(()=>{
+        const fc={};
+        (reviews||[]).forEach(r=>(r.flavors||[]).forEach(f=>fc[f]=(fc[f]||0)+1));
+        const top=Object.entries(fc).sort((a,b)=>b[1]-a[1]).slice(0,12);
+        if(!top.length) return "";
+        return `<div>
+          <div class="text-[11px] uppercase tracking-wider text-muted mb-2">Key tastes</div>
+          <div class="flex flex-wrap gap-2">
+            ${top.map(([f,c])=>{ const em=(FLAVORS.find(x=>x[1]===f)||["",""])[0];
+              return `<div class="text-xs px-3 py-1.5 rounded-full bg-panel2 border border-gold/30 text-cream/80">${em} ${esc(f)} <span class="text-gold/60 text-[10px]">×${c}</span></div>`;
+            }).join("")}
+          </div>
+        </div>`;
+      })()}
+      <div class="border-t border-line"></div>` : ""}
+      <div>
+        <div class="text-[11px] uppercase tracking-wider text-muted mb-3">${mine?"Your review":"Add your review"}</div>
+        <div class="bg-panel border border-line rounded-2xl p-4 space-y-4">
+          ${SLIDERS.map(([k,l,r,c1,c2])=>`
+            <div>
+              <div class="flex justify-between text-xs text-cream/80 mb-1.5"><span>${l}</span><span class="capitalize text-muted">${k}</span><span>${r}</span></div>
+              <input type="range" min="0" max="100" value="${mine?mine[k]??50:50}" class="taste" id="sl_${k}" style="--c1:${c1};--c2:${c2}"/>
+            </div>`).join("")}
           <div>
-            <div class="flex justify-between text-[11px] text-muted mb-1"><span>${l}</span><span>${r}</span></div>
-            <div class="bar"><i style="width:${a!=null?a:0}%"></i></div>
-          </div>`;}).join("")}
+            <label class="fld">Your score — <span id="scoreVal" class="text-gold">${mine?Number(mine.score??7).toFixed(1):"7.0"}</span> / 10</label>
+            <input type="range" min="0" max="10" step="0.1" value="${mine?mine.score??7:7}" class="taste" id="sl_score" style="--c1:#7e2028;--c2:#c9a24b"/>
+          </div>
+          <div>
+            <label class="fld">Notes</label>
+            <textarea id="rv_notes" rows="3" placeholder="What did you taste?">${mine?esc(mine.notes||""):""}</textarea>
+          </div>
+          <div>
+            <label class="fld">Flavours you tasted</label>
+            <div class="flex flex-wrap gap-2 mt-1">
+              ${FLAVORS.map(([em,f])=>{ const on=(mine?.flavors||[]).includes(f);
+                return `<button type="button" data-flavor="${esc(f)}" class="flavor-tag btn text-xs px-3 py-1.5 border rounded-full transition ${on?'bg-gold/20 border-gold text-gold':'border-line text-muted'}">${em} ${esc(f)}</button>`;
+              }).join("")}
+            </div>
+          </div>
+          <button id="saveRv" class="btn w-full bg-claret hover:bg-claretdim text-cream py-3">${mine?"Update review":"Save review"}</button>
+        </div>
       </div>
     </div>
 
-    ${(()=>{
-      const fc={};
-      (reviews||[]).forEach(r=>(r.flavors||[]).forEach(f=>fc[f]=(fc[f]||0)+1));
-      const top=Object.entries(fc).sort((a,b)=>b[1]-a[1]).slice(0,10);
-      if(!top.length) return "";
-      return `<div class="mt-5">
-        <div class="text-[11px] uppercase tracking-wider text-muted mb-2">Key tastes</div>
-        <div class="flex flex-wrap gap-2">
-          ${top.map(([f,c])=>{
-            const em=(FLAVORS.find(x=>x[1]===f)||["",""])[0];
-            return `<div class="text-xs px-3 py-1.5 rounded-full bg-panel2 border border-gold/30 text-cream/80">${em} ${esc(f)} <span class="text-gold/60 text-[10px]">×${c}</span></div>`;
-          }).join("")}
-        </div>
-      </div>`;
-    })()}
-
-    ${(()=>{
-      const fc={};
-      (reviews||[]).forEach(r=>(r.food_pairings||[]).forEach(f=>fc[f]=(fc[f]||0)+1));
-      const top=Object.entries(fc).sort((a,b)=>b[1]-a[1]).slice(0,6);
-      if(!top.length) return "";
-      return `<div class="mt-5">
-        <div class="text-[11px] uppercase tracking-wider text-muted mb-2">Goes well with</div>
-        <div class="flex flex-wrap gap-2">
-          ${top.map(([f])=>{
-            const em=(FOOD_PAIRINGS.find(x=>x[1]===f)||["",""])[0];
-            return `<div class="text-xs px-3 py-1.5 rounded-full bg-panel2 border border-line text-cream/80">${em} ${esc(f)}</div>`;
-          }).join("")}
-        </div>
-      </div>`;
-    })()}`:"" }
-
-    <div class="mt-7">
-      <div class="text-[11px] uppercase tracking-wider text-muted mb-3">${mine?"Your review":"Add your review"}</div>
-      <div class="bg-panel border border-line rounded-2xl p-4 space-y-4">
-        ${SLIDERS.map(([k,l,r,c1,c2])=>`
-          <div>
-            <div class="flex justify-between text-xs text-cream/80 mb-1.5"><span>${l}</span><span class="capitalize text-muted">${k}</span><span>${r}</span></div>
-            <input type="range" min="0" max="100" value="${mine?mine[k]??50:50}" class="taste" id="sl_${k}" style="--c1:${c1};--c2:${c2}"/>
-          </div>`).join("")}
-        <div>
-          <label class="fld">Your score — <span id="scoreVal" class="text-gold">${mine?Number(mine.score??7).toFixed(1):"7.0"}</span> / 10</label>
-          <input type="range" min="0" max="10" step="0.1" value="${mine?mine.score??7:7}" class="taste" id="sl_score" style="--c1:#7e2028;--c2:#c9a24b"/>
-        </div>
-        <div>
-          <label class="fld">Notes</label>
-          <textarea id="rv_notes" rows="3" placeholder="What did you taste?">${mine?esc(mine.notes||""):""}</textarea>
-        </div>
-        <div>
-          <label class="fld">Flavours you tasted</label>
-          <div class="flex flex-wrap gap-2 mt-1">
-            ${FLAVORS.map(([em,f])=>{
-              const on=(mine?.flavors||[]).includes(f);
-              return `<button type="button" data-flavor="${esc(f)}" class="flavor-tag btn text-xs px-3 py-1.5 border rounded-full transition ${on?'bg-gold/20 border-gold text-gold':'border-line text-muted'}">${em} ${esc(f)}</button>`;
+    <!-- PAIRINGS TAB -->
+    <div id="wtab-pairings" class="mt-4 space-y-5 hidden">
+      ${(()=>{
+        const fc={};
+        (reviews||[]).forEach(r=>(r.food_pairings||[]).forEach(f=>fc[f]=(fc[f]||0)+1));
+        const top=Object.entries(fc).sort((a,b)=>b[1]-a[1]);
+        if(!top.length) return `<p class="text-muted text-sm italic text-center py-4">No pairings logged yet — be the first below.</p>`;
+        return `<div>
+          <div class="text-[11px] uppercase tracking-wider text-muted mb-2">The club recommends</div>
+          <div class="flex flex-wrap gap-2">
+            ${top.map(([f,c])=>{ const em=(FOOD_PAIRINGS.find(x=>x[1]===f)||["",""])[0];
+              return `<div class="text-sm px-4 py-2 rounded-full bg-panel2 border border-line text-cream/80">${em} ${esc(f)} <span class="text-gold/60 text-[10px]">×${c}</span></div>`;
             }).join("")}
           </div>
-        </div>
-        <div>
-          <label class="fld">Goes well with</label>
-          <div class="flex flex-wrap gap-2 mt-1">
-            ${FOOD_PAIRINGS.map(([em,f])=>{
-              const on=(mine?.food_pairings||[]).includes(f);
-              return `<button type="button" data-food="${esc(f)}" class="food-tag btn text-xs px-3 py-1.5 border rounded-full transition ${on?'bg-gold/20 border-gold text-gold':'border-line text-muted'}">${em} ${esc(f)}</button>`;
+          <div class="border-t border-line mt-5"></div>
+        </div>`;
+      })()}
+      <div>
+        <div class="text-[11px] uppercase tracking-wider text-muted mb-3">Your pairings</div>
+        <div class="bg-panel border border-line rounded-2xl p-4 space-y-4">
+          <div class="flex flex-wrap gap-2">
+            ${FOOD_PAIRINGS.map(([em,f])=>{ const on=(mine?.food_pairings||[]).includes(f);
+              return `<button type="button" data-food="${esc(f)}" class="food-tag btn text-sm px-4 py-2 border rounded-full transition ${on?'bg-gold/20 border-gold text-gold':'border-line text-muted'}">${em} ${esc(f)}</button>`;
             }).join("")}
           </div>
+          <button id="saveRv2" class="btn w-full bg-claret hover:bg-claretdim text-cream py-3">${mine?"Update pairings":"Save pairings"}</button>
         </div>
-        <button id="saveRv" class="btn w-full bg-claret hover:bg-claretdim text-cream py-3">${mine?"Update review":"Save review"}</button>
       </div>
     </div>
 
-    ${ (reviews&&reviews.length) ? `
-    <div class="mt-7">
-      <div class="text-[11px] uppercase tracking-wider text-muted mb-3">Notes from the table</div>
+    <!-- REVIEWS TAB -->
+    <div id="wtab-reviews" class="mt-4 hidden">
+      ${(reviews&&reviews.length) ? `
       <div class="space-y-3">
         ${reviews.map(r=>`
           <div class="bg-panel2/50 border border-line rounded-xl p-3">
-            <div class="flex items-center gap-2 mb-1">
+            <div class="flex items-center gap-2 mb-2">
               <div class="w-7 h-7 rounded-full bg-ink border border-line grid place-items-center text-gold text-[11px] font-display">${esc(initials(r.profiles?.display_name))}</div>
               <span class="text-cream text-sm font-medium">${esc(r.profiles?.display_name||"Member")}</span>
-              <span class="ml-auto font-display text-gold">${r.score!=null?Number(r.score).toFixed(1):"–"}</span>
+              <span class="ml-auto font-display text-gold text-lg">${r.score!=null?Number(r.score).toFixed(1):"–"}</span>
             </div>
+            ${r.flavors?.length?`<div class="flex flex-wrap gap-1 mb-2">${(r.flavors||[]).slice(0,6).map(f=>{ const em=(FLAVORS.find(x=>x[1]===f)||["",""])[0]; return `<span class="text-[10px] px-2 py-0.5 rounded-full bg-ink border border-line text-muted">${em} ${esc(f)}</span>`;}).join("")}</div>`:""}
+            ${r.food_pairings?.length?`<div class="flex flex-wrap gap-1 mb-2">${(r.food_pairings||[]).map(f=>{ const em=(FOOD_PAIRINGS.find(x=>x[1]===f)||["",""])[0]; return `<span class="text-[10px] px-2 py-0.5 rounded-full bg-ink border border-gold/20 text-gold/70">${em} ${esc(f)}</span>`;}).join("")}</div>`:""}
             ${r.notes?`<p class="text-cream/80 text-sm leading-relaxed">${esc(r.notes)}</p>`:`<p class="text-muted/60 text-sm italic">no notes</p>`}
           </div>`).join("")}
-      </div>
-    </div>`:"" }`;
+      </div>` : `<div class="text-muted text-sm py-8 text-center border border-dashed border-line rounded-2xl">No reviews yet — add yours on the Tastes tab.</div>`}
+    </div>`;
 
   $("#bk").onclick = ()=> go("leaders");
   $("#sl_score").oninput = (e)=> $("#scoreVal").textContent = Number(e.target.value).toFixed(1);
+
+  // Tab switching
+  document.querySelectorAll(".wtab").forEach(b=> b.onclick=()=>{
+    document.querySelectorAll(".wtab").forEach(x=>{ x.classList.remove("bg-panel","text-cream","shadow"); x.classList.add("text-muted"); });
+    document.querySelectorAll("[id^='wtab-']").forEach(x=> x.classList.add("hidden"));
+    b.classList.add("bg-panel","text-cream","shadow"); b.classList.remove("text-muted");
+    document.getElementById("wtab-"+b.dataset.wtab).classList.remove("hidden");
+  });
 
   // Flavour tag toggles
   document.querySelectorAll(".flavor-tag").forEach(b=> b.onclick=()=>{
@@ -445,7 +495,7 @@ async function renderWine(id){
     b.classList.toggle("text-gold",!on); b.classList.toggle("text-muted",on); b.classList.toggle("border-line",on);
   });
 
-  $("#saveRv").onclick = async ()=>{
+  const doSave = async (btn) => {
     const flavors = [...document.querySelectorAll(".flavor-tag.text-gold")].map(b=>b.dataset.flavor);
     const food_pairings = [...document.querySelectorAll(".food-tag.text-gold")].map(b=>b.dataset.food);
     const row = {
@@ -456,11 +506,13 @@ async function renderWine(id){
       flavors, food_pairings,
       updated_at:new Date().toISOString(),
     };
-    $("#saveRv").textContent="Saving…"; $("#saveRv").disabled=true;
+    btn.textContent="Saving…"; btn.disabled=true;
     const { error } = await sb.from("reviews").upsert(row, { onConflict:"wine_id,user_id" });
-    if(error){ toast(error.message); $("#saveRv").disabled=false; $("#saveRv").textContent="Save review"; }
+    if(error){ toast(error.message); btn.disabled=false; btn.textContent="Save"; }
     else { toast("Poured & logged", true); renderWine(id); }
   };
+  $("#saveRv").onclick = ()=> doSave($("#saveRv"));
+  const rv2 = $("#saveRv2"); if(rv2) rv2.onclick = ()=> doSave(rv2);
 }
 
 /* ============================================================
@@ -665,12 +717,22 @@ async function renderProfile(personId){
   if(error){ toast(error.message); return go("people"); }
   const me = personId===state.user.id;
 
+  const { data: allRv } = await sb.from("reviews")
+    .select("score, notes, wines(variety,type)")
+    .eq("user_id", personId);
   const { data: top } = await sb.from("reviews")
     .select("score, notes, wines(*)")
     .eq("user_id", personId)
     .order("score", { ascending:false })
     .limit(10);
   const rows = (top||[]).filter(r=>r.wines);
+
+  // Calculate stats
+  const scored = (allRv||[]).filter(r=>r.score!=null);
+  const avgScore = scored.length ? (scored.reduce((s,r)=>s+Number(r.score),0)/scored.length).toFixed(1) : null;
+  const varieties = {}; (allRv||[]).forEach(r=>{ if(r.wines?.variety) varieties[r.wines.variety]=(varieties[r.wines.variety]||0)+1; });
+  const favVariety = Object.entries(varieties).sort((a,b)=>b[1]-a[1])[0]?.[0] || null;
+  const strictLabel = avgScore==null ? null : avgScore>=7.8 ? "Generous pour 🥂" : avgScore>=6.5 ? "Balanced judge ⚖️" : "Tough crowd 🧐";
 
   $("#pf").innerHTML = `
     <button id="bk" class="btn text-muted text-sm mb-4">‹ members</button>
@@ -682,7 +744,24 @@ async function renderProfile(personId){
       </div>
     </div>
 
-    <div class="mt-5 rounded-2xl p-4 bg-panel2/50 border border-line">
+    ${avgScore!=null ? `
+    <div class="mt-5 grid grid-cols-3 gap-2">
+      <div class="bg-panel2/50 border border-line rounded-xl p-3 text-center">
+        <div class="font-display text-gold text-2xl font-bold">${avgScore}</div>
+        <div class="text-[10px] uppercase tracking-wider text-muted mt-0.5">Avg score</div>
+      </div>
+      <div class="bg-panel2/50 border border-line rounded-xl p-3 text-center">
+        <div class="font-display text-gold text-2xl font-bold">${(allRv||[]).length}</div>
+        <div class="text-[10px] uppercase tracking-wider text-muted mt-0.5">Reviews</div>
+      </div>
+      <div class="bg-panel2/50 border border-line rounded-xl p-3 text-center">
+        <div class="text-cream text-xs font-medium leading-tight mt-1">${esc(favVariety||"—")}</div>
+        <div class="text-[10px] uppercase tracking-wider text-muted mt-0.5">Fav variety</div>
+      </div>
+    </div>
+    <div class="mt-2 bg-panel2/30 border border-line rounded-xl px-4 py-2.5 text-center text-sm text-muted">${esc(strictLabel)}</div>` : ""}
+
+    <div class="mt-4 rounded-2xl p-4 bg-panel2/50 border border-line">
       <div class="text-[11px] uppercase tracking-wider text-muted mb-1">Palate</div>
       <p class="text-cream/85 text-sm whitespace-pre-line">${p.palate_notes?esc(p.palate_notes):'<span class="text-muted/60 italic">no notes yet</span>'}</p>
       ${me?`<button id="editMe" class="btn mt-3 text-sm text-gold underline underline-offset-4">edit my profile</button>`:""}
