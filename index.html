@@ -1,0 +1,616 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>The Cellar Book</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;0,9..144,900;1,9..144,400&family=Hanken+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        colors: {
+          ink:    "#15100f",
+          panel:  "#1e1614",
+          panel2: "#271d1a",
+          line:   "#3a2c28",
+          claret: "#b5303b",
+          claretdim: "#7e2028",
+          gold:   "#c9a24b",
+          cream:  "#ece3d6",
+          muted:  "#a8978c",
+        },
+        fontFamily: {
+          display: ['Fraunces', 'Georgia', 'serif'],
+          body: ['"Hanken Grotesk"', 'system-ui', 'sans-serif'],
+        },
+      },
+    },
+  };
+</script>
+<style>
+  :root { color-scheme: dark; }
+  html, body { background: #15100f; }
+  body {
+    font-family: 'Hanken Grotesk', system-ui, sans-serif;
+    color: #ece3d6;
+    -webkit-font-smoothing: antialiased;
+    background:
+      radial-gradient(1200px 600px at 50% -10%, rgba(181,48,59,0.10), transparent 60%),
+      radial-gradient(900px 500px at 100% 100%, rgba(201,162,75,0.06), transparent 55%),
+      #15100f;
+    min-height: 100dvh;
+  }
+  .font-display { font-family: 'Fraunces', Georgia, serif; }
+  .grain::before {
+    content:""; position:fixed; inset:0; pointer-events:none; z-index:0; opacity:0.035;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+  .fade-in { animation: fade .5s ease both; }
+  @keyframes fade { from { opacity:0; transform:translateY(8px);} to {opacity:1; transform:none;} }
+  .stagger > * { animation: fade .5s ease both; }
+  .stagger > *:nth-child(1){animation-delay:.04s}
+  .stagger > *:nth-child(2){animation-delay:.09s}
+  .stagger > *:nth-child(3){animation-delay:.14s}
+  .stagger > *:nth-child(4){animation-delay:.19s}
+  .stagger > *:nth-child(5){animation-delay:.24s}
+  .stagger > *:nth-child(6){animation-delay:.29s}
+  .stagger > *:nth-child(7){animation-delay:.34s}
+  .stagger > *:nth-child(8){animation-delay:.39s}
+
+  /* taste sliders */
+  input[type=range].taste { -webkit-appearance:none; appearance:none; width:100%; height:6px; border-radius:99px; outline:none;
+    background: linear-gradient(90deg, var(--c1), var(--c2)); }
+  input[type=range].taste::-webkit-slider-thumb { -webkit-appearance:none; appearance:none; width:20px; height:20px; border-radius:50%;
+    background:#ece3d6; border:3px solid #15100f; box-shadow:0 0 0 1px #c9a24b, 0 2px 6px rgba(0,0,0,.5); cursor:pointer; }
+  input[type=range].taste::-moz-range-thumb { width:18px; height:18px; border-radius:50%; background:#ece3d6; border:3px solid #15100f; box-shadow:0 0 0 1px #c9a24b; cursor:pointer; }
+
+  .bar { height:6px; border-radius:99px; background:#2a201d; overflow:hidden; }
+  .bar > i { display:block; height:100%; background:linear-gradient(90deg,#7e2028,#c9a24b); }
+
+  .tabbtn.active { color:#ece3d6; }
+  .tabbtn.active .dot { opacity:1; }
+  input, select, textarea { background:#271d1a; border:1px solid #3a2c28; border-radius:12px; padding:.7rem .85rem; color:#ece3d6; width:100%; font-size:15px; }
+  input:focus, select:focus, textarea:focus { outline:none; border-color:#c9a24b; }
+  label.fld { display:block; font-size:12px; letter-spacing:.08em; text-transform:uppercase; color:#a8978c; margin:0 0 .35rem .15rem; }
+  .btn { border-radius:99px; font-weight:600; transition:.15s; }
+  .btn:active { transform:scale(.98); }
+  .scroll-x { scrollbar-width:none; } .scroll-x::-webkit-scrollbar{ display:none; }
+  ::placeholder { color:#6f615a; }
+</style>
+</head>
+<body class="grain">
+<div id="app" class="relative z-10 max-w-md mx-auto min-h-[100dvh] flex flex-col"></div>
+
+<script>
+/* ============================================================
+   CONFIG — paste your two Supabase values here
+   (Project Settings → API). The anon key is safe in the browser
+   ONLY because Row-Level Security is enabled on every table.
+   ============================================================ */
+const SUPABASE_URL = "https://gojtvankmysjduuomgfb.supabase.co";
+const SUPABASE_ANON_KEY = "sb_publishable_s5trhsTRFt9NHVcZ2_UshQ_Do5j-Sj3";
+
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+/* ---------- tiny helpers ---------- */
+const $ = (s, r=document) => r.querySelector(s);
+const app = $("#app");
+const esc = (s) => (s==null?"":String(s)).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const initials = (n) => (n||"?").trim().split(/\s+/).map(w=>w[0]).slice(0,2).join("").toUpperCase();
+
+let state = { user:null, profile:null, view:"leaders", wineId:null, personId:null };
+
+function toast(msg, ok=false){
+  let t = $("#toast");
+  if(!t){ t=document.createElement("div"); t.id="toast";
+    t.className="fixed left-1/2 -translate-x-1/2 bottom-24 z-50 px-4 py-2.5 rounded-full text-sm font-medium shadow-lg";
+    document.body.appendChild(t); }
+  t.style.background = ok ? "#234d2c" : "#7e2028";
+  t.style.color = "#fff";
+  t.textContent = msg;
+  t.style.opacity = "1";
+  clearTimeout(t._h); t._h=setTimeout(()=>{ t.style.opacity="0"; }, 2600);
+}
+
+/* ============================================================
+   AUTH
+   ============================================================ */
+function loginScreen(sent=false){
+  app.innerHTML = `
+    <div class="flex-1 flex flex-col justify-center px-7 fade-in">
+      <div class="text-center mb-10">
+        <h1 class="font-display font-black text-5xl leading-[0.95] text-cream">The Cellar<br/>Book</h1>
+        <div class="font-display italic text-gold text-sm tracking-[0.28em] uppercase mt-4">house pour</div>
+        <p class="text-muted mt-4 text-[15px]">Tasting notes &amp; rankings,<br/>for us and ours.</p>
+      </div>
+      ${ sent ? `
+        <div class="bg-panel border border-line rounded-2xl p-6 text-center">
+          <div class="text-gold font-display text-2xl mb-2">Check your email</div>
+          <p class="text-muted text-sm">We sent a magic link. Tap it on this device to step inside.</p>
+          <button id="back" class="btn mt-5 text-sm text-muted underline underline-offset-4">use a different email</button>
+        </div>` : `
+        <div class="space-y-3">
+          <div>
+            <label class="fld">Your email</label>
+            <input id="email" type="email" inputmode="email" autocomplete="email" placeholder="you@example.com" />
+          </div>
+          <button id="send" class="btn w-full bg-claret hover:bg-claretdim text-cream py-3.5 text-[15px]">Send me a link</button>
+          <p class="text-center text-xs text-muted/80 pt-1">Invite-only — your email must be on the list.</p>
+        </div>`}
+    </div>
+    <div class="text-center text-[11px] text-muted/50 pb-6 tracking-wide">a quiet little wine club</div>`;
+
+  if(sent){ $("#back").onclick=()=>loginScreen(false); return; }
+  $("#send").onclick = async () => {
+    const email = $("#email").value.trim();
+    if(!email) return toast("Pop your email in first");
+    $("#send").textContent="Sending…"; $("#send").disabled=true;
+    const { error } = await sb.auth.signInWithOtp({
+      email,
+      options: { emailRedirectTo: window.location.href, shouldCreateUser: false }
+    });
+    if(error){ toast(error.message); $("#send").textContent="Send me a link"; $("#send").disabled=false; }
+    else loginScreen(true);
+  };
+}
+
+async function ensureProfile(){
+  const { data } = await sb.from("profiles").select("*").eq("id", state.user.id).maybeSingle();
+  if(data){ state.profile = data; return; }
+  // trigger usually creates it; fallback insert just in case
+  const fallback = (state.user.email||"friend").split("@")[0];
+  const { data: ins } = await sb.from("profiles").insert({ id: state.user.id, display_name: fallback }).select().single();
+  state.profile = ins;
+}
+
+/* ============================================================
+   SHELL  (header + screen + bottom tabs)
+   ============================================================ */
+function shell(inner, titleOverride){
+  const title = titleOverride || {leaders:"Leaderboards",add:"Add a bottle",people:"The Members",wine:"Tasting",profile:"Member"}[state.view] || "";
+  app.innerHTML = `
+    <header class="px-5 pt-7 pb-4 flex items-end justify-between">
+      <div>
+        <div class="font-display italic text-gold text-[11px] tracking-[0.24em] uppercase">the cellar book</div>
+        <div class="font-display font-black text-2xl text-cream -mt-0.5">${esc(title)}</div>
+      </div>
+      <button id="meBtn" class="w-10 h-10 rounded-full bg-panel2 border border-line grid place-items-center font-display text-gold text-sm">${esc(initials(state.profile?.display_name))}</button>
+    </header>
+    <main id="screen" class="flex-1 px-5 pb-28 overflow-y-auto"></main>
+    <nav class="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-md px-6 pb-[max(14px,env(safe-area-inset-bottom))] pt-3 bg-gradient-to-t from-ink via-ink to-transparent">
+      <div class="bg-panel/90 backdrop-blur border border-line rounded-2xl flex justify-around py-2.5">
+        ${tab("leaders","Ranks")}
+        ${tab("add","Add")}
+        ${tab("people","Members")}
+      </div>
+    </nav>`;
+  $("#screen").innerHTML = inner;
+  $("#meBtn").onclick = ()=> go("people");
+  app.querySelectorAll("[data-tab]").forEach(b=> b.onclick=()=>go(b.dataset.tab));
+}
+function tab(id,label){
+  const on = state.view===id || (id==="people" && state.view==="people");
+  return `<button data-tab="${id}" class="tabbtn ${on?'active':''} flex flex-col items-center gap-1 px-4 text-muted text-[11px] font-semibold tracking-wide">
+    <span class="dot w-1.5 h-1.5 rounded-full bg-gold ${on?'opacity-100':'opacity-0'} transition-opacity"></span>${label}</button>`;
+}
+
+function go(view, id=null){
+  state.view = view;
+  if(view==="wine") state.wineId = id;
+  if(view==="profile") state.personId = id;
+  if(view==="leaders") renderLeaders();
+  else if(view==="add") renderAdd();
+  else if(view==="people") renderPeople();
+  else if(view==="wine") renderWine(id);
+  else if(view==="profile") renderProfile(id);
+}
+
+/* ============================================================
+   LEADERBOARDS
+   ============================================================ */
+let leaderType = "red";
+const TYPE_TABS = [["red","Red"],["white","White"],["sparkling","Sparkling"]];
+
+async function renderLeaders(){
+  shell(`<div id="lead"></div>`);
+  const host = $("#lead");
+  host.innerHTML = `
+    <div class="flex gap-2 mb-5 scroll-x overflow-x-auto">
+      ${TYPE_TABS.map(([k,l])=>`<button data-lt="${k}" class="btn whitespace-nowrap px-4 py-2 text-sm border ${leaderType===k?'bg-cream text-ink border-cream':'border-line text-muted'}">${l}</button>`).join("")}
+    </div>
+    <div id="leadList" class="space-y-3 stagger"><div class="text-muted text-sm py-10 text-center">Pouring…</div></div>
+    <h3 class="font-display text-gold text-lg mt-9 mb-3">Best of each variety</h3>
+    <div id="varList" class="space-y-3 stagger"></div>`;
+
+  host.querySelectorAll("[data-lt]").forEach(b=> b.onclick=()=>{ leaderType=b.dataset.lt; renderLeaders(); });
+
+  const { data: top, error } = await sb.from("top_by_type").select("*").eq("type", leaderType).lte("rank",10).order("rank");
+  if(error) return toast(error.message);
+  $("#leadList").innerHTML = (top&&top.length) ? top.map(rankCard).join("")
+    : `<div class="text-muted text-sm py-8 text-center border border-dashed border-line rounded-2xl">No ${leaderType} reviewed yet.<br/>Add a bottle and start the cellar.</div>`;
+  bindCards($("#leadList"));
+
+  const { data: vars } = await sb.from("top_by_variety").select("*").eq("rank",1).order("avg_score",{ascending:false});
+  $("#varList").innerHTML = (vars&&vars.length) ? vars.map(varCard).join("")
+    : `<div class="text-muted text-sm py-4 text-center">—</div>`;
+  bindCards($("#varList"));
+}
+
+function scorePill(s){ return `<div class="shrink-0 w-12 h-12 rounded-xl bg-ink border border-gold/40 grid place-items-center font-display font-bold text-gold text-lg">${ s!=null?Number(s).toFixed(1):"–" }</div>`; }
+
+function rankCard(w){
+  return `<button data-wine="${w.id}" class="w-full text-left bg-panel border border-line rounded-2xl p-3 flex items-center gap-3 hover:border-gold/40 transition">
+    <div class="font-display text-2xl w-7 text-center ${w.rank<=3?'text-gold':'text-muted/60'}">${w.rank}</div>
+    ${w.photo_url?`<img src="${esc(w.photo_url)}" class="w-11 h-14 object-cover rounded-md bg-panel2"/>`:`<div class="w-11 h-14 rounded-md bg-panel2 grid place-items-center text-gold/40 font-display text-xs">🍷</div>`}
+    <div class="flex-1 min-w-0">
+      <div class="font-display text-cream text-[17px] leading-tight truncate">${esc(w.name)}</div>
+      <div class="text-muted text-xs truncate">${esc([w.producer,w.vintage,w.region].filter(Boolean).join(" · "))}</div>
+      <div class="text-muted/70 text-[11px] mt-0.5">${w.num_reviews} review${w.num_reviews==1?'':'s'}</div>
+    </div>
+    ${scorePill(w.avg_score)}
+  </button>`;
+}
+function varCard(w){
+  return `<button data-wine="${w.id}" class="w-full text-left bg-panel2/60 border border-line rounded-2xl p-3 flex items-center gap-3 hover:border-gold/40 transition">
+    <div class="flex-1 min-w-0">
+      <div class="text-gold/90 text-[11px] uppercase tracking-wider">${esc(w.variety||"—")}</div>
+      <div class="font-display text-cream text-[16px] leading-tight truncate">${esc(w.name)}</div>
+      <div class="text-muted text-xs truncate">${esc([w.producer,w.vintage].filter(Boolean).join(" · "))}</div>
+    </div>
+    ${scorePill(w.avg_score)}
+  </button>`;
+}
+function bindCards(root){ root.querySelectorAll("[data-wine]").forEach(b=> b.onclick=()=>go("wine", b.dataset.wine)); }
+
+/* ============================================================
+   WINE DETAIL + REVIEW
+   ============================================================ */
+const SLIDERS = [
+  ["body","Light","Bold","#5b6a3a","#b5303b"],
+  ["sweetness","Dry","Sweet","#7e2028","#c9a24b"],
+  ["tannin","Smooth","Tannic","#8a5a3a","#4a2a22"],
+  ["acidity","Soft","Acidic","#3a5a6a","#c9a24b"],
+];
+
+async function renderWine(id){
+  shell(`<div id="wd" class="fade-in"><div class="text-muted text-sm py-10 text-center">Decanting…</div></div>`);
+  const host = $("#wd");
+
+  const { data: w, error } = await sb.from("wine_scores").select("*").eq("id", id).single();
+  if(error){ toast(error.message); return; }
+  const { data: reviews } = await sb.from("reviews")
+    .select("*, profiles(display_name, avatar_url)").eq("wine_id", id).order("created_at",{ascending:false});
+
+  const mine = (reviews||[]).find(r=> r.user_id===state.user.id);
+  const avgSlider = (key)=>{ const v=(reviews||[]).map(r=>r[key]).filter(x=>x!=null); return v.length? Math.round(v.reduce((a,b)=>a+b,0)/v.length):null; };
+
+  host.innerHTML = `
+    <button id="bk" class="btn text-muted text-sm mb-4">‹ back</button>
+    <div class="flex gap-4">
+      ${w.photo_url?`<img src="${esc(w.photo_url)}" class="w-24 h-32 object-cover rounded-lg bg-panel2"/>`:`<div class="w-24 h-32 rounded-lg bg-panel2 grid place-items-center text-3xl">🍷</div>`}
+      <div class="flex-1 min-w-0">
+        <div class="text-gold/90 text-[11px] uppercase tracking-wider">${esc(w.type)}${w.variety?` · ${esc(w.variety)}`:""}</div>
+        <h2 class="font-display font-black text-cream text-2xl leading-tight mt-0.5">${esc(w.name)}</h2>
+        <div class="text-muted text-sm mt-1">${esc([w.producer,w.vintage].filter(Boolean).join(" · "))}</div>
+        <div class="text-muted text-xs">${esc([w.region,w.country].filter(Boolean).join(", "))}</div>
+        <div class="flex items-center gap-2 mt-2">
+          <span class="font-display text-gold text-2xl font-bold">${ w.avg_score!=null?Number(w.avg_score).toFixed(1):"–" }</span>
+          <span class="text-muted text-xs">/10 · ${w.num_reviews} review${w.num_reviews==1?'':'s'}</span>
+        </div>
+      </div>
+    </div>
+
+    ${ (w.snobby_writeup || w.awards) ? `
+    <div class="mt-5 rounded-2xl p-4 bg-gradient-to-br from-[#241a14] to-[#1c1512] border border-gold/40 relative">
+      <div class="font-display italic text-gold text-sm mb-2">The Snobby Bit</div>
+      ${w.snobby_writeup?`<p class="text-cream/90 text-[14px] leading-relaxed whitespace-pre-line">${esc(w.snobby_writeup)}</p>`:""}
+      ${w.awards?`<div class="mt-3 pt-3 border-t border-gold/20"><div class="text-[11px] uppercase tracking-wider text-gold/70 mb-1">Awards</div><p class="text-cream/90 text-sm whitespace-pre-line">${esc(w.awards)}</p></div>`:""}
+      ${w.source_url?`<a href="${esc(w.source_url)}" target="_blank" rel="noopener" class="inline-block mt-3 text-xs text-gold underline underline-offset-4">source ↗</a>`:""}
+    </div>` : "" }
+
+    ${ (reviews&&reviews.length) ? `
+    <div class="mt-6">
+      <div class="text-[11px] uppercase tracking-wider text-muted mb-2">The club's palate</div>
+      <div class="space-y-2.5">
+        ${SLIDERS.map(([k,l,r])=>{ const a=avgSlider(k); return `
+          <div>
+            <div class="flex justify-between text-[11px] text-muted mb-1"><span>${l}</span><span>${r}</span></div>
+            <div class="bar"><i style="width:${a!=null?a:0}%"></i></div>
+          </div>`;}).join("")}
+      </div>
+    </div>`:"" }
+
+    <div class="mt-7">
+      <div class="text-[11px] uppercase tracking-wider text-muted mb-3">${mine?"Your review":"Add your review"}</div>
+      <div class="bg-panel border border-line rounded-2xl p-4 space-y-4">
+        ${SLIDERS.map(([k,l,r,c1,c2])=>`
+          <div>
+            <div class="flex justify-between text-xs text-cream/80 mb-1.5"><span>${l}</span><span class="capitalize text-muted">${k}</span><span>${r}</span></div>
+            <input type="range" min="0" max="100" value="${mine?mine[k]??50:50}" class="taste" id="sl_${k}" style="--c1:${c1};--c2:${c2}"/>
+          </div>`).join("")}
+        <div>
+          <label class="fld">Your score — <span id="scoreVal" class="text-gold">${mine?Number(mine.score??7).toFixed(1):"7.0"}</span> / 10</label>
+          <input type="range" min="0" max="10" step="0.1" value="${mine?mine.score??7:7}" class="taste" id="sl_score" style="--c1:#7e2028;--c2:#c9a24b"/>
+        </div>
+        <div>
+          <label class="fld">Notes</label>
+          <textarea id="rv_notes" rows="3" placeholder="What did you taste?">${mine?esc(mine.notes||""):""}</textarea>
+        </div>
+        <button id="saveRv" class="btn w-full bg-claret hover:bg-claretdim text-cream py-3">${mine?"Update review":"Save review"}</button>
+      </div>
+    </div>
+
+    ${ (reviews&&reviews.length) ? `
+    <div class="mt-7">
+      <div class="text-[11px] uppercase tracking-wider text-muted mb-3">Notes from the table</div>
+      <div class="space-y-3">
+        ${reviews.map(r=>`
+          <div class="bg-panel2/50 border border-line rounded-xl p-3">
+            <div class="flex items-center gap-2 mb-1">
+              <div class="w-7 h-7 rounded-full bg-ink border border-line grid place-items-center text-gold text-[11px] font-display">${esc(initials(r.profiles?.display_name))}</div>
+              <span class="text-cream text-sm font-medium">${esc(r.profiles?.display_name||"Member")}</span>
+              <span class="ml-auto font-display text-gold">${r.score!=null?Number(r.score).toFixed(1):"–"}</span>
+            </div>
+            ${r.notes?`<p class="text-cream/80 text-sm leading-relaxed">${esc(r.notes)}</p>`:`<p class="text-muted/60 text-sm italic">no notes</p>`}
+          </div>`).join("")}
+      </div>
+    </div>`:"" }`;
+
+  $("#bk").onclick = ()=> go("leaders");
+  $("#sl_score").oninput = (e)=> $("#scoreVal").textContent = Number(e.target.value).toFixed(1);
+  $("#saveRv").onclick = async ()=>{
+    const row = {
+      wine_id: id, user_id: state.user.id,
+      body:+$("#sl_body").value, sweetness:+$("#sl_sweetness").value,
+      tannin:+$("#sl_tannin").value, acidity:+$("#sl_acidity").value,
+      score:+$("#sl_score").value, notes:$("#rv_notes").value.trim()||null,
+      updated_at:new Date().toISOString(),
+    };
+    $("#saveRv").textContent="Saving…"; $("#saveRv").disabled=true;
+    const { error } = await sb.from("reviews").upsert(row, { onConflict:"wine_id,user_id" });
+    if(error){ toast(error.message); $("#saveRv").disabled=false; $("#saveRv").textContent="Save review"; }
+    else { toast("Poured & logged", true); renderWine(id); }
+  };
+}
+
+/* ============================================================
+   ADD WINE  (+ Open Food Facts optional lookup)
+   ============================================================ */
+const WINE_TYPES = ["red","white","sparkling","rose","dessert","fortified"];
+
+function renderAdd(){
+  shell(`
+    <div class="fade-in space-y-4">
+      <div class="bg-panel2/50 border border-line rounded-2xl p-3">
+        <label class="fld">Optional — look it up</label>
+        <div class="flex gap-2">
+          <input id="off_q" placeholder="Search a bottle by name…" />
+          <button id="off_go" class="btn shrink-0 px-4 bg-panel2 border border-line text-cream text-sm">Find</button>
+        </div>
+        <div id="off_res" class="mt-2 space-y-1"></div>
+        <p class="text-[11px] text-muted/70 mt-2 leading-snug">Uses Open Food Facts — patchy for boutique wines, blank for notes. Just fill it in by hand if nothing matches.</p>
+      </div>
+
+      <div class="space-y-3">
+        <div><label class="fld">Name *</label><input id="f_name" placeholder="e.g. The Standish Shiraz"/></div>
+        <div class="grid grid-cols-2 gap-3">
+          <div><label class="fld">Producer</label><input id="f_producer"/></div>
+          <div><label class="fld">Vintage</label><input id="f_vintage" inputmode="numeric" placeholder="2021"/></div>
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div><label class="fld">Type *</label><select id="f_type">${WINE_TYPES.map(t=>`<option value="${t}">${t[0].toUpperCase()+t.slice(1)}</option>`).join("")}</select></div>
+          <div><label class="fld">Variety</label><input id="f_variety" placeholder="Shiraz"/></div>
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div><label class="fld">Region</label><input id="f_region" placeholder="Barossa"/></div>
+          <div><label class="fld">Country</label><input id="f_country" placeholder="Australia"/></div>
+        </div>
+        <div><label class="fld">Photo</label><input id="f_photo" type="file" accept="image/*" class="text-sm text-muted"/></div>
+
+        <div class="rounded-2xl p-3 bg-gradient-to-br from-[#241a14] to-[#1c1512] border border-gold/30 space-y-3">
+          <div class="font-display italic text-gold text-sm">The Snobby Bit</div>
+          <div><label class="fld">Professional write-up</label><textarea id="f_snob" rows="3" placeholder="Paste the winemaker's / critic's notes…"></textarea></div>
+          <div><label class="fld">Awards</label><textarea id="f_awards" rows="2" placeholder="95pts Halliday · Gold, Sydney 2024…"></textarea></div>
+          <div><label class="fld">Source link</label><input id="f_source" placeholder="https://…"/></div>
+        </div>
+
+        <button id="saveWine" class="btn w-full bg-claret hover:bg-claretdim text-cream py-3.5">Add to the cellar</button>
+        <input id="f_barcode" type="hidden"/>
+      </div>
+    </div>`);
+
+  $("#off_go").onclick = offSearch;
+  $("#off_q").addEventListener("keydown", e=>{ if(e.key==="Enter"){ e.preventDefault(); offSearch(); }});
+  $("#saveWine").onclick = saveWine;
+}
+
+async function offSearch(){
+  const q = $("#off_q").value.trim();
+  if(!q) return;
+  const res = $("#off_res"); res.innerHTML = `<div class="text-muted text-xs py-1">Searching…</div>`;
+  try{
+    const url = `https://world.openfoodfacts.org/cgi/search.pl?search_terms=${encodeURIComponent(q)}&search_simple=1&action=process&json=1&page_size=5`;
+    const r = await fetch(url); const j = await r.json();
+    const hits = (j.products||[]).filter(p=>p.product_name).slice(0,5);
+    if(!hits.length){ res.innerHTML = `<div class="text-muted text-xs py-1">No match — fill it in manually below.</div>`; return; }
+    res.innerHTML = hits.map((p,i)=>`<button data-i="${i}" class="off-pick w-full text-left text-sm bg-ink border border-line rounded-lg px-3 py-2 hover:border-gold/40">
+      <span class="text-cream">${esc(p.product_name)}</span> <span class="text-muted text-xs">${esc(p.brands||"")}</span></button>`).join("");
+    res.querySelectorAll(".off-pick").forEach(b=> b.onclick=()=>{
+      const p = hits[+b.dataset.i];
+      $("#f_name").value = p.product_name||"";
+      if(p.brands) $("#f_producer").value = p.brands.split(",")[0].trim();
+      if(p.code) $("#f_barcode").value = p.code;
+      res.innerHTML = `<div class="text-gold text-xs py-1">Filled from Open Food Facts — tidy it up below.</div>`;
+    });
+  }catch(e){ res.innerHTML = `<div class="text-muted text-xs py-1">Lookup failed — fill it in manually.</div>`; }
+}
+
+async function saveWine(){
+  const name = $("#f_name").value.trim();
+  if(!name) return toast("It needs a name at least");
+  const btn = $("#saveWine"); btn.textContent="Adding…"; btn.disabled=true;
+
+  let photo_url = null;
+  const file = $("#f_photo").files[0];
+  if(file){
+    const path = `${state.user.id}/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g,"")}`;
+    const { error: upErr } = await sb.storage.from("bottle-photos").upload(path, file, { upsert:false });
+    if(upErr){ toast("Photo upload failed: "+upErr.message); }
+    else photo_url = sb.storage.from("bottle-photos").getPublicUrl(path).data.publicUrl;
+  }
+
+  const row = {
+    name,
+    producer: $("#f_producer").value.trim() || null,
+    vintage: $("#f_vintage").value ? parseInt($("#f_vintage").value,10) : null,
+    type: $("#f_type").value,
+    variety: $("#f_variety").value.trim() || null,
+    region: $("#f_region").value.trim() || null,
+    country: $("#f_country").value.trim() || null,
+    barcode: $("#f_barcode").value || null,
+    photo_url,
+    snobby_writeup: $("#f_snob").value.trim() || null,
+    awards: $("#f_awards").value.trim() || null,
+    source_url: $("#f_source").value.trim() || null,
+    added_by: state.user.id,
+  };
+  const { data, error } = await sb.from("wines").insert(row).select().single();
+  if(error){ toast(error.message); btn.disabled=false; btn.textContent="Add to the cellar"; return; }
+  toast("Added — go give it a score", true);
+  go("wine", data.id);
+}
+
+/* ============================================================
+   MEMBERS / PROFILES
+   ============================================================ */
+async function renderPeople(){
+  shell(`<div id="pp" class="fade-in"><div class="text-muted text-sm py-10 text-center">Gathering the club…</div></div>`);
+  const { data: people, error } = await sb.from("profiles").select("*").order("display_name");
+  if(error) return toast(error.message);
+
+  // review counts per member
+  const { data: rv } = await sb.from("reviews").select("user_id");
+  const counts = {}; (rv||[]).forEach(r=> counts[r.user_id]=(counts[r.user_id]||0)+1);
+
+  $("#pp").innerHTML = `
+    <div class="space-y-3 stagger">
+      ${people.map(p=>{
+        const me = p.id===state.user.id;
+        return `<button data-person="${esc(p.id)}" class="w-full text-left bg-panel border border-line rounded-2xl p-3 flex items-center gap-3 hover:border-gold/40 transition">
+            <div class="w-11 h-11 rounded-full bg-ink border ${me?'border-gold':'border-line'} grid place-items-center text-gold font-display">${esc(initials(p.display_name))}</div>
+            <div class="flex-1 min-w-0">
+              <div class="text-cream font-medium">${esc(p.display_name)} ${me?'<span class="text-gold/70 text-xs">· you</span>':''}</div>
+              <div class="text-muted text-xs">${counts[p.id]||0} review${(counts[p.id]||0)==1?'':'s'}</div>
+            </div>
+            <span class="text-muted text-lg">›</span>
+          </button>`;
+      }).join("")}
+    </div>
+    <button id="signout" class="btn w-full mt-8 text-muted text-sm border border-line rounded-2xl py-3">Sign out</button>`;
+
+  $("#pp").querySelectorAll("[data-person]").forEach(b=> b.onclick=()=>go("profile", b.dataset.person));
+  $("#signout").onclick = async ()=>{ await sb.auth.signOut(); location.reload(); };
+}
+
+/* ---- a single member's profile + their personal top 10 ---- */
+async function renderProfile(personId){
+  shell(`<div id="pf" class="fade-in"><div class="text-muted text-sm py-10 text-center">Opening the cellar book…</div></div>`, "Member");
+  const { data: p, error } = await sb.from("profiles").select("*").eq("id", personId).single();
+  if(error){ toast(error.message); return go("people"); }
+  const me = personId===state.user.id;
+
+  const { data: top } = await sb.from("reviews")
+    .select("score, notes, wines(*)")
+    .eq("user_id", personId)
+    .order("score", { ascending:false })
+    .limit(10);
+  const rows = (top||[]).filter(r=>r.wines);
+
+  $("#pf").innerHTML = `
+    <button id="bk" class="btn text-muted text-sm mb-4">‹ members</button>
+    <div class="flex items-center gap-4">
+      <div class="w-16 h-16 rounded-full bg-ink border ${me?'border-gold':'border-line'} grid place-items-center text-gold font-display text-xl">${esc(initials(p.display_name))}</div>
+      <div class="flex-1 min-w-0">
+        <h2 class="font-display font-black text-cream text-2xl leading-tight">${esc(p.display_name)}${me?' <span class="text-gold/70 text-sm align-middle">· you</span>':''}</h2>
+        <div class="text-muted text-sm">${rows.length} review${rows.length==1?'':'s'} logged</div>
+      </div>
+    </div>
+
+    <div class="mt-5 rounded-2xl p-4 bg-panel2/50 border border-line">
+      <div class="text-[11px] uppercase tracking-wider text-muted mb-1">Palate</div>
+      <p class="text-cream/85 text-sm whitespace-pre-line">${p.palate_notes?esc(p.palate_notes):'<span class="text-muted/60 italic">no notes yet</span>'}</p>
+      ${me?`<button id="editMe" class="btn mt-3 text-sm text-gold underline underline-offset-4">edit my profile</button>`:""}
+    </div>
+
+    <h3 class="font-display text-gold text-lg mt-7 mb-3">${me?"Your":esc(p.display_name)+"’s"} top 10</h3>
+    <div id="pfTop" class="space-y-3 stagger">
+      ${ rows.length ? rows.map((r,i)=>profileWineCard(r,i+1)).join("")
+        : `<div class="text-muted text-sm py-8 text-center border border-dashed border-line rounded-2xl">No reviews yet.</div>` }
+    </div>`;
+
+  $("#bk").onclick = ()=> go("people");
+  const em = $("#editMe"); if(em) em.onclick = editMe;
+  $("#pfTop").querySelectorAll("[data-wine]").forEach(b=> b.onclick=()=>go("wine", b.dataset.wine));
+}
+
+function profileWineCard(r, rank){
+  const w = r.wines;
+  return `<button data-wine="${esc(w.id)}" class="w-full text-left bg-panel border border-line rounded-2xl p-3 flex items-center gap-3 hover:border-gold/40 transition">
+    <div class="font-display text-2xl w-7 text-center ${rank<=3?'text-gold':'text-muted/60'}">${rank}</div>
+    ${w.photo_url?`<img src="${esc(w.photo_url)}" class="w-11 h-14 object-cover rounded-md bg-panel2"/>`:`<div class="w-11 h-14 rounded-md bg-panel2 grid place-items-center text-gold/40">🍷</div>`}
+    <div class="flex-1 min-w-0">
+      <div class="font-display text-cream text-[17px] leading-tight truncate">${esc(w.name)}</div>
+      <div class="text-muted text-xs truncate">${esc([w.producer,w.vintage,w.region].filter(Boolean).join(" · "))}</div>
+    </div>
+    ${scorePill(r.score)}
+  </button>`;
+}
+
+function editMe(){
+  const p = state.profile;
+  const s = $("#screen");
+  s.innerHTML = `<div class="fade-in space-y-3">
+    <button id="bk" class="btn text-muted text-sm mb-2">‹ back</button>
+    <div><label class="fld">Display name</label><input id="e_name" value="${esc(p.display_name||"")}"/></div>
+    <div><label class="fld">Avatar URL (optional)</label><input id="e_av" value="${esc(p.avatar_url||"")}" placeholder="https://…"/></div>
+    <div><label class="fld">Palate notes</label><textarea id="e_palate" rows="4" placeholder="Big reds, low sweetness, allergic to oaky chardonnay…">${esc(p.palate_notes||"")}</textarea></div>
+    <button id="saveMe" class="btn w-full bg-claret hover:bg-claretdim text-cream py-3">Save</button>
+  </div>`;
+  $("#bk").onclick = ()=> go("profile", state.user.id);
+  $("#saveMe").onclick = async ()=>{
+    const upd = { display_name:$("#e_name").value.trim()||p.display_name, avatar_url:$("#e_av").value.trim()||null, palate_notes:$("#e_palate").value.trim()||null };
+    const { error } = await sb.from("profiles").update(upd).eq("id", state.user.id);
+    if(error) return toast(error.message);
+    state.profile = {...p, ...upd};
+    toast("Saved", true); go("profile", state.user.id);
+  };
+}
+
+/* ============================================================
+   BOOT
+   ============================================================ */
+async function boot(){
+  if(SUPABASE_URL.startsWith("YOUR_")){
+    app.innerHTML = `<div class="flex-1 grid place-items-center px-8 text-center"><div>
+      <div class="font-display text-gold text-2xl mb-2">Almost there</div>
+      <p class="text-muted text-sm">Paste your Supabase URL and anon key into the CONFIG block at the top of this file, then reload.</p></div></div>`;
+    return;
+  }
+  const { data:{ session } } = await sb.auth.getSession();
+  if(session){ state.user = session.user; await ensureProfile(); go("leaders"); }
+  else loginScreen(false);
+
+  sb.auth.onAuthStateChange(async (_e, sess)=>{
+    if(sess && !state.user){ state.user = sess.user; await ensureProfile(); go("leaders"); }
+    if(!sess && state.user){ state.user=null; loginScreen(false); }
+  });
+}
+boot();
+</script>
+</body>
+</html>
