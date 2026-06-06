@@ -124,7 +124,7 @@ function toast(msg, ok=false){
 /* ============================================================
    AUTH
    ============================================================ */
-function loginScreen(sent=false){
+function loginScreen(sent=false, mode="password"){
   app.innerHTML = `
     <div class="flex-1 flex flex-col justify-center px-7 fade-in">
       <div class="text-center mb-10">
@@ -143,22 +143,55 @@ function loginScreen(sent=false){
             <label class="fld">Your email</label>
             <input id="email" type="email" inputmode="email" autocomplete="email" placeholder="you@example.com" />
           </div>
+          ${ mode === "password" ? `
+          <div>
+            <label class="fld">Password</label>
+            <input id="password" type="password" autocomplete="current-password" placeholder="••••••••" />
+          </div>
+          <button id="signin" class="btn w-full bg-claret hover:bg-claretdim text-cream py-3.5 text-[15px]">Sign in</button>
+          <div class="flex items-center gap-3 py-1">
+            <div class="flex-1 h-px bg-line"></div>
+            <span class="text-muted/60 text-xs">or</span>
+            <div class="flex-1 h-px bg-line"></div>
+          </div>
+          <button id="switchMagic" class="btn w-full border border-line text-muted py-3 text-sm">Send me a magic link instead</button>
+          ` : `
           <button id="send" class="btn w-full bg-claret hover:bg-claretdim text-cream py-3.5 text-[15px]">Send me a link</button>
+          <button id="switchPw" class="btn w-full border border-line text-muted py-3 text-sm">Sign in with password instead</button>
+          `}
           <p class="text-center text-xs text-muted/80 pt-1">Invite-only — your email must be on the list.</p>
         </div>`}
     </div>
     <div class="text-center text-[11px] text-muted/50 pb-6 tracking-wide">a quiet little wine club</div>`;
 
   if(sent){ $("#back").onclick=()=>loginScreen(false); return; }
-  $("#send").onclick = async () => {
+
+  // Mode toggles
+  const sw1 = $("#switchMagic"); if(sw1) sw1.onclick = ()=> loginScreen(false, "magic");
+  const sw2 = $("#switchPw");   if(sw2) sw2.onclick = ()=> loginScreen(false, "password");
+
+  // Password sign-in
+  const si = $("#signin");
+  if(si) si.onclick = async () => {
+    const email = $("#email").value.trim();
+    const password = $("#password").value;
+    if(!email || !password) return toast("Enter your email and password");
+    si.textContent="Signing in…"; si.disabled=true;
+    const { error } = await sb.auth.signInWithPassword({ email, password });
+    if(error){ toast(error.message); si.textContent="Sign in"; si.disabled=false; }
+  };
+
+  // Magic link
+  const send = $("#send");
+  if(send) send.onclick = async () => {
     const email = $("#email").value.trim();
     if(!email) return toast("Pop your email in first");
-    $("#send").textContent="Sending…"; $("#send").disabled=true;
+    send.textContent="Sending…"; send.disabled=true;
     const { error } = await sb.auth.signInWithOtp({
       email,
       options: { emailRedirectTo: window.location.href, shouldCreateUser: false }
     });
-    if(error){ toast(error.message); $("#send").textContent="Send me a link"; $("#send").disabled=false; }
+    if(error){ toast(error.message); send.textContent="Send me a link"; send.disabled=false; }
     else loginScreen(true);
   };
 }
