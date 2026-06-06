@@ -95,6 +95,10 @@
 const SUPABASE_URL = "https://gojtvankmysjduuomgfb.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_s5trhsTRFt9NHVcZ2_UshQ_Do5j-Sj3";
 
+// Optional: paste a free Gemini API key from https://aistudio.google.com/app/apikey
+// to enable the "Research with AI" button on the Add Wine form.
+const GEMINI_API_KEY = "";
+
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 /* ---------- tiny helpers ---------- */
@@ -413,7 +417,12 @@ function renderAdd(){
         <div><label class="fld">Photo</label><input id="f_photo" type="file" accept="image/*" class="text-sm text-muted"/></div>
 
         <div class="rounded-2xl p-3 bg-gradient-to-br from-[#241a14] to-[#1c1512] border border-gold/30 space-y-3">
-          <div class="font-display italic text-gold text-sm">The Snobby Bit</div>
+          <div class="flex items-center justify-between">
+            <div class="font-display italic text-gold text-sm">The Snobby Bit</div>
+            <button id="aiResearch" class="btn text-[11px] px-3 py-1.5 border border-gold/40 text-gold rounded-full hover:bg-gold/10 transition"
+              title="${GEMINI_API_KEY ? 'Research this wine with AI' : 'Add a GEMINI_API_KEY to enable'}">✦ Research with AI</button>
+          </div>
+          <div id="aiStatus" class="hidden text-xs text-muted/80 italic"></div>
           <div><label class="fld">Professional write-up</label><textarea id="f_snob" rows="3" placeholder="Paste the winemaker's / critic's notes…"></textarea></div>
           <div><label class="fld">Awards</label><textarea id="f_awards" rows="2" placeholder="95pts Halliday · Gold, Sydney 2024…"></textarea></div>
           <div><label class="fld">Source link</label><input id="f_source" placeholder="https://…"/></div>
@@ -427,6 +436,7 @@ function renderAdd(){
   $("#off_go").onclick = offSearch;
   $("#off_q").addEventListener("keydown", e=>{ if(e.key==="Enter"){ e.preventDefault(); offSearch(); }});
   $("#saveWine").onclick = saveWine;
+  $("#aiResearch").onclick = aiResearch;
 }
 
 async function offSearch(){
@@ -448,6 +458,56 @@ async function offSearch(){
       res.innerHTML = `<div class="text-gold text-xs py-1">Filled from Open Food Facts — tidy it up below.</div>`;
     });
   }catch(e){ res.innerHTML = `<div class="text-muted text-xs py-1">Lookup failed — fill it in manually.</div>`; }
+}
+
+async function aiResearch(){
+  if(!GEMINI_API_KEY){
+    toast("Add a GEMINI_API_KEY to the config at the top of index.html to use AI research");
+    return;
+  }
+  const name = $("#f_name").value.trim();
+  const producer = $("#f_producer").value.trim();
+  const vintage = $("#f_vintage").value.trim();
+  if(!name){ toast("Enter a wine name first"); return; }
+
+  const btn = $("#aiResearch");
+  const status = $("#aiStatus");
+  btn.textContent = "✦ Researching…"; btn.disabled = true;
+  status.textContent = "Asking Gemini about this wine…"; status.classList.remove("hidden");
+
+  const wineLabel = [vintage, producer, name].filter(Boolean).join(" ");
+  const prompt = `You are a wine expert writing for a private wine club app. Research the wine "${wineLabel}" and provide:
+1. TASTING_NOTES: 2–3 sentences of professional tasting notes (appearance, nose, palate, finish). Be specific and vivid.
+2. AWARDS: Any notable awards, ratings or scores (e.g. "95pts James Halliday 2023 · Gold Medal, Sydney Royal 2022"). If none found, write "None on record."
+
+Format your response EXACTLY like this (keep the labels):
+TASTING_NOTES: <your notes here>
+AWARDS: <awards here>`;
+
+  try {
+    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ contents:[{ parts:[{ text: prompt }] }] })
+    });
+    const j = await res.json();
+    if(!res.ok) throw new Error(j.error?.message || "Gemini API error");
+    const text = j.candidates?.[0]?.content?.parts?.[0]?.text || "";
+
+    const notesMatch = text.match(/TASTING_NOTES:\s*([\s\S]*?)(?=AWARDS:|$)/i);
+    const awardsMatch = text.match(/AWARDS:\s*([\s\S]*?)$/i);
+
+    if(notesMatch?.[1]?.trim()) $("#f_snob").value = notesMatch[1].trim();
+    if(awardsMatch?.[1]?.trim() && !awardsMatch[1].trim().toLowerCase().includes("none")) $("#f_awards").value = awardsMatch[1].trim();
+
+    status.textContent = "✓ AI research filled in — check and edit before saving.";
+    status.classList.add("text-gold/80");
+    toast("AI tasting notes filled in", true);
+  } catch(e) {
+    toast("AI research failed: " + e.message);
+    status.classList.add("hidden");
+  }
+  btn.textContent = "✦ Research with AI"; btn.disabled = false;
 }
 
 async function saveWine(){
